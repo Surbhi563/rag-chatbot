@@ -4,9 +4,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from app.core.logging import get_logger
-from app.services import extractors
 from app.services.llm import call_llm
-from app.services.text_processing import build_snippets
 from app.services.vector_db import vector_db
 
 logger = get_logger(__name__)
@@ -20,44 +18,7 @@ class RAGService:
         self.max_chunk_size = 1000
         self.chunk_overlap = 200
     
-    async def add_document(self, upload_id: str) -> Dict[str, Any]:
-        """Add a document to the RAG system."""
-        try:
-            # Extract text from document
-            text = extractors.extract_text(upload_id)
-            if not text:
-                return {"success": False, "error": "No text extracted from document"}
-            
-            # Split into chunks
-            chunks = self._split_text_into_chunks(text)
-            
-            # Prepare metadata
-            metadatas = []
-            for i, chunk in enumerate(chunks):
-                metadatas.append({
-                    "upload_id": upload_id,
-                    "chunk_index": i,
-                    "total_chunks": len(chunks),
-                    "source": "document_upload"
-                })
-            
-            # Add to vector database
-            chunk_ids = self.vector_db.add_documents(
-                documents=chunks,
-                metadatas=metadatas
-            )
-            
-            logger.info(f"Added document {upload_id} with {len(chunks)} chunks")
-            return {
-                "success": True,
-                "upload_id": upload_id,
-                "chunks_added": len(chunks),
-                "chunk_ids": chunk_ids
-            }
-            
-        except Exception as e:
-            logger.error(f"Failed to add document {upload_id}: {e}")
-            return {"success": False, "error": str(e)}
+    # Document upload functionality removed - using website ingestion only
     
     async def answer_question(
         self, 
