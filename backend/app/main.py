@@ -8,8 +8,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.api.middleware import LoggingMiddleware, SecurityHeadersMiddleware
-from app.api.routes_taxonomy import router as taxonomy_router
-from app.api.routes_uploads import router as uploads_router
 from app.api.routes_chat import router as chat_router
 from app.api.routes_websites import router as websites_router
 from app.core.config import settings
@@ -49,8 +47,6 @@ def create_app() -> FastAPI:
     )
 
     # Routers
-    app.include_router(uploads_router)
-    app.include_router(taxonomy_router)
     app.include_router(chat_router)
     app.include_router(websites_router)
 
