@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     
     # Vector Database
     vector_db_path: Optional[str] = Field(default="/tmp/chroma_db", description="Path to ChromaDB storage")
+    
+    # Memory optimization settings
+    max_batch_size: int = Field(default=8, description="Maximum batch size for embedding generation")
+    embedding_device: str = Field(default="cpu", description="Device for embedding model (cpu/cuda)")
 
     # Defaults
     max_children_default: int = Field(default=8)

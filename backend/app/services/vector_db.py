@@ -18,7 +18,12 @@ class VectorDB:
     
     def __init__(self, collection_name: str = "documents"):
         self.collection_name = collection_name
-        self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+        # Initialize embedding model with reduced memory usage
+        self.embedding_model = SentenceTransformer(
+            'all-MiniLM-L6-v2',
+            device=settings.embedding_device,  # Use configurable device
+            trust_remote_code=True
+        )
         
         # Initialize ChromaDB
         db_path = settings.vector_db_path or (settings.local_bucket_dir + "/chroma_db")
@@ -52,8 +57,12 @@ class VectorDB:
         if ids is None:
             ids = [str(uuid.uuid4()) for _ in documents]
         
-        # Generate embeddings
-        embeddings = self.embedding_model.encode(documents).tolist()
+        # Generate embeddings with memory optimization
+        embeddings = self.embedding_model.encode(
+            documents, 
+            batch_size=settings.max_batch_size,  # Use configurable batch size
+            show_progress_bar=True
+        ).tolist()
         
         # Prepare metadatas
         if metadatas is None:
@@ -77,8 +86,12 @@ class VectorDB:
         where: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """Search for similar documents."""
-        # Generate query embedding
-        query_embedding = self.embedding_model.encode([query]).tolist()[0]
+        # Generate query embedding with memory optimization
+        query_embedding = self.embedding_model.encode(
+            [query], 
+            batch_size=1,  # Process one at a time to reduce memory
+            show_progress_bar=False
+        ).tolist()[0]
         
         # Search collection
         results = self.collection.query(
