@@ -1,0 +1,18 @@
+FROM ubuntu:22.04
+
+# Install dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Ollama
+RUN curl -fsSL https://ollama.ai/install.sh | sh
+
+# Set environment variables for Render
+ENV OLLAMA_HOST=0.0.0.0:$PORT
+
+# Expose the port
+EXPOSE $PORT
+
+# Start Ollama server
+CMD ["ollama", "serve"]

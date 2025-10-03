@@ -6,5 +6,6 @@ ENV OLLAMA_HOST=0.0.0.0:$PORT
 # Expose the port (Render will set PORT automatically)
 EXPOSE $PORT
 
-# Start Ollama
-CMD ["ollama", "serve"]
+# Start Ollama server
+ENTRYPOINT ["/bin/ollama"]
+CMD ["serve"]
