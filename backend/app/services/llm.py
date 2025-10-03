@@ -154,8 +154,9 @@ async def call_llm(
     }
 
     # Debug logging for request
+    ollama_url = f"{settings.llm_base_url.rstrip('/')}/api/generate" if settings.llm_base_url else "http://localhost:11434/api/generate"
     logger.info("LLM gateway request", 
-                url="http://localhost:11434/api/generate",
+                url=ollama_url,
                 model=payload.get("model"),
                 message_count=len(messages),
                 has_response_format=response_format is not None,
@@ -166,8 +167,8 @@ async def call_llm(
     # Set sane timeouts and a single retry for transient 429/5xx
     timeout = httpx.Timeout(connect=30, read=90, write=30, pool=None)
     async with httpx.AsyncClient(timeout=timeout) as client:
-        # Use local Ollama endpoint
-        url = "http://localhost:11434/api/generate"
+        # Use configured Ollama endpoint
+        url = f"{settings.llm_base_url.rstrip('/')}/api/generate" if settings.llm_base_url else "http://localhost:11434/api/generate"
         try:
             resp = await client.post(url, json=payload, headers=headers)
             if resp.status_code in (429, 500, 502, 503, 504):
