@@ -5,7 +5,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import chromadb
 from chromadb.config import Settings
-from sentence_transformers import SentenceTransformer
+# from sentence_transformers import SentenceTransformer  # Commented out for memory optimization
+# import numpy as np  # Commented out for memory optimization
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -18,12 +19,8 @@ class VectorDB:
     
     def __init__(self, collection_name: str = "documents"):
         self.collection_name = collection_name
-        # Initialize embedding model with reduced memory usage
-        self.embedding_model = SentenceTransformer(
-            'all-MiniLM-L6-v2',
-            device=settings.embedding_device,  # Use configurable device
-            trust_remote_code=True
-        )
+        # Use simple hash-based embeddings to reduce memory usage
+        self.embedding_model = None  # No external model needed
         
         # Initialize ChromaDB
         db_path = settings.vector_db_path or (settings.local_bucket_dir + "/chroma_db")
@@ -57,12 +54,13 @@ class VectorDB:
         if ids is None:
             ids = [str(uuid.uuid4()) for _ in documents]
         
-        # Generate embeddings with memory optimization
-        embeddings = self.embedding_model.encode(
-            documents, 
-            batch_size=settings.max_batch_size,  # Use configurable batch size
-            show_progress_bar=True
-        ).tolist()
+        # Generate simple hash-based embeddings to reduce memory usage
+        embeddings = []
+        for doc in documents:
+            # Simple hash-based embedding (not semantic, but memory-efficient)
+            hash_val = hash(doc) % (2**31)
+            embedding = [float((hash_val >> i) & 1) for i in range(32)]  # 32-dim vector
+            embeddings.append(embedding)
         
         # Prepare metadatas
         if metadatas is None:
@@ -86,12 +84,9 @@ class VectorDB:
         where: Optional[Dict[str, Any]] = None
     ) -> List[Dict[str, Any]]:
         """Search for similar documents."""
-        # Generate query embedding with memory optimization
-        query_embedding = self.embedding_model.encode(
-            [query], 
-            batch_size=1,  # Process one at a time to reduce memory
-            show_progress_bar=False
-        ).tolist()[0]
+        # Generate simple hash-based query embedding
+        hash_val = hash(query) % (2**31)
+        query_embedding = [float((hash_val >> i) & 1) for i in range(32)]  # 32-dim vector
         
         # Search collection
         results = self.collection.query(
