@@ -177,32 +177,117 @@ async def call_llm(
                 system_msg_length=len(messages[0]["content"]) if messages else 0,
                 user_msg_length=len(messages[1]["content"]) if len(messages) > 1 else 0)
 
-    # Set sane timeouts and a single retry for transient 429/5xx
+    # Set sane timeouts with retry logic for transient errors
     timeout = httpx.Timeout(connect=30, read=90, write=30, pool=None)
     async with httpx.AsyncClient(timeout=timeout) as client:
         # Use the constructed URL
         url = ollama_url
-        try:
-            resp = await client.post(url, json=payload, headers=headers)
-            if resp.status_code in (429, 500, 502, 503, 504):
-                import asyncio as _asyncio
-                await _asyncio.sleep(0.5)
+        import asyncio as _asyncio
+        
+        max_retries = 3
+        retry_delays = [2, 5, 10]  # Exponential backoff: 2s, 5s, 10s
+        
+        for attempt in range(max_retries):
+            try:
                 resp = await client.post(url, json=payload, headers=headers)
-            if resp.status_code not in (200, 201):  # Accept both 200 and 201
-                logger.error(
-                    "LLM gateway error",
-                    status_code=resp.status_code,
-                    url=url,
-                    model=payload.get("model"),
-                    body_preview=resp.text[:500],
-                )
-                raise HTTPException(status_code=502, detail=f"LLM gateway error {resp.status_code}")
-        except HTTPException:
-            raise
-        except Exception as exc:
-            logger.error("LLM request failed", error=str(exc), url=url)
-            # When an explicit gateway is configured, surface the failure (no silent fallback)
-            raise HTTPException(status_code=502, detail="LLM request failed")
+                
+                # Handle rate limiting (429) with exponential backoff
+                if resp.status_code == 429:
+                    if attempt < max_retries - 1:
+                        delay = retry_delays[attempt]
+                        logger.warning(
+                            "LLM rate limited, retrying",
+                            attempt=attempt + 1,
+                            max_retries=max_retries,
+                            delay=delay,
+                            url=url
+                        )
+                        await _asyncio.sleep(delay)
+                        continue
+                    else:
+                        # Last attempt failed
+                        error_detail = resp.json().get("error", {}).get("message", "Rate limit exceeded") if resp.headers.get("content-type", "").startswith("application/json") else resp.text[:200]
+                        logger.error(
+                            "LLM rate limit error after retries",
+                            status_code=429,
+                            url=url,
+                            model=payload.get("model"),
+                            error_detail=error_detail
+                        )
+                        raise HTTPException(
+                            status_code=429,
+                            detail=f"LLM service rate limit exceeded. Please try again in a moment. Error: {error_detail}"
+                        )
+                
+                # Handle other transient errors (5xx)
+                if resp.status_code in (500, 502, 503, 504):
+                    if attempt < max_retries - 1:
+                        delay = retry_delays[attempt]
+                        logger.warning(
+                            "LLM service error, retrying",
+                            status_code=resp.status_code,
+                            attempt=attempt + 1,
+                            delay=delay,
+                            url=url
+                        )
+                        await _asyncio.sleep(delay)
+                        continue
+                    else:
+                        logger.error(
+                            "LLM gateway error after retries",
+                            status_code=resp.status_code,
+                            url=url,
+                            model=payload.get("model"),
+                            body_preview=resp.text[:500],
+                        )
+                        raise HTTPException(status_code=502, detail=f"LLM gateway error {resp.status_code}: Service temporarily unavailable")
+                
+                # Handle 404 - endpoint not found
+                if resp.status_code == 404:
+                    logger.error(
+                        "LLM gateway 404 error - endpoint not found",
+                        status_code=404,
+                        url=url,
+                        model=payload.get("model"),
+                        body_preview=resp.text[:500],
+                    )
+                    raise HTTPException(
+                        status_code=404,
+                        detail=f"LLM endpoint not found at {url}. Please check LLM_BASE_URL configuration. Ollama service may not be accessible or path is incorrect."
+                    )
+                
+                # Success or other errors
+                if resp.status_code not in (200, 201):
+                    logger.error(
+                        "LLM gateway error",
+                        status_code=resp.status_code,
+                        url=url,
+                        model=payload.get("model"),
+                        body_preview=resp.text[:500],
+                    )
+                    raise HTTPException(status_code=502, detail=f"LLM gateway error {resp.status_code}: {resp.text[:200] if resp.text else 'Unknown error'}")
+                
+                # Success - break out of retry loop
+                break
+                
+            except HTTPException:
+                # Don't retry HTTPExceptions, just raise them
+                raise
+            except Exception as exc:
+                if attempt < max_retries - 1:
+                    delay = retry_delays[attempt]
+                    logger.warning(
+                        "LLM request failed, retrying",
+                        error=str(exc),
+                        attempt=attempt + 1,
+                        delay=delay,
+                        url=url
+                    )
+                    await _asyncio.sleep(delay)
+                    continue
+                else:
+                    logger.error("LLM request failed after retries", error=str(exc), url=url)
+                    raise HTTPException(status_code=502, detail=f"LLM request failed: {str(exc)}")
 
         # Parse JSON response with error handling
         try:

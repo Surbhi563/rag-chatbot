@@ -32,22 +32,42 @@ for i in {1..30}; do\n\
 done\n\
 \n\
 # Wait a bit more for Ollama to fully initialize\n\
-sleep 5\n\
+sleep 10\n\
 \n\
 # Pull the model if not already available\n\
 echo "Checking for model llama3.2:3b..."\n\
-export OLLAMA_HOST=http://localhost:${OLLAMA_PORT}\n\
-if ! /bin/ollama list 2>/dev/null | grep -q "llama3.2:3b"; then\n\
-  echo "Model not found. Pulling llama3.2:3b (this may take several minutes)..."\n\
-  /bin/ollama pull llama3.2:3b || echo "Warning: Model pull encountered an issue"\n\
-  echo "Model pull attempt completed!"\n\
-else\n\
-  echo "Model llama3.2:3b already exists!"\n\
-fi\n\
+MODEL_CHECK_COUNT=0\n\
+while [ $MODEL_CHECK_COUNT -lt 5 ]; do\n\
+  if /bin/ollama list 2>/dev/null | grep -q "llama3.2:3b"; then\n\
+    echo "Model llama3.2:3b already exists!"\n\
+    break\n\
+  fi\n\
+  MODEL_CHECK_COUNT=$((MODEL_CHECK_COUNT + 1))\n\
+  if [ $MODEL_CHECK_COUNT -eq 1 ]; then\n\
+    echo "Model not found. Pulling llama3.2:3b (this may take several minutes)..."\n\
+    echo "This is a ~2GB download, please be patient..."\n\
+    /bin/ollama pull llama3.2:3b\n\
+    PULL_EXIT_CODE=$?\n\
+    if [ $PULL_EXIT_CODE -eq 0 ]; then\n\
+      echo "✓ Model pull completed successfully!"\n\
+      break\n\
+    else\n\
+      echo "⚠ Model pull had issues (exit code: $PULL_EXIT_CODE), retrying..."\n\
+      sleep 5\n\
+    fi\n\
+  fi\n\
+  sleep 2\n\
+done\n\
 \n\
-# List available models\n\
-echo "Available models:"\n\
-/bin/ollama list || echo "Could not list models, but server is running"\n\
+# Verify model is available\n\
+echo "Verifying model availability..."\n\
+if /bin/ollama list 2>/dev/null | grep -q "llama3.2:3b"; then\n\
+  echo "✓ Model llama3.2:3b is ready!"\n\
+else\n\
+  echo "⚠ WARNING: Model llama3.2:3b still not available after pull attempt"\n\
+  echo "Available models:"\n\
+  /bin/ollama list 2>/dev/null || echo "Could not list models"\n\
+fi\n\
 \n\
 # Reset OLLAMA_HOST for server (listening on all interfaces)\n\
 export OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT}\n\
