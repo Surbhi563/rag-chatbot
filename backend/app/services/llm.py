@@ -87,6 +87,154 @@ def _convert_hierarchical_to_flat(data: Dict[str, Any]) -> List[Dict[str, Any]]:
     return flat_nodes
 
 
+async def _call_openai_api(
+    messages: List[Dict[str, str]],
+    response_format: Optional[Dict[str, Any]] = None,
+    temperature: float = 0.2,
+) -> Dict[str, Any]:
+    """Call OpenAI API for LLM completion."""
+    
+    # Determine model name - use configured model or default
+    model_name = settings.llm_default_model if settings.llm_default_model else "gpt-3.5-turbo"
+    
+    # Construct OpenAI URL
+    base_url = settings.llm_base_url.rstrip('/') if settings.llm_base_url else "https://api.openai.com/v1"
+    if not base_url.endswith('/v1'):
+        base_url = f"{base_url}/v1" if not base_url.endswith('/') else f"{base_url}v1"
+    
+    url = f"{base_url}/chat/completions"
+    
+    # Build payload for OpenAI API
+    payload: Dict[str, Any] = {
+        "model": model_name,
+        "messages": messages,
+        "temperature": settings.llm_default_temperature if settings.llm_default_temperature is not None else temperature,
+        "max_tokens": settings.llm_default_max_tokens if settings.llm_default_max_tokens is not None else 2000,
+    }
+    
+    if response_format:
+        payload["response_format"] = response_format
+    
+    # Headers with API key
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {settings.llm_api_key}",
+    }
+    
+    logger.info("OpenAI API request",
+                url=url,
+                model=model_name,
+                message_count=len(messages),
+                has_response_format=response_format is not None,
+                max_tokens=payload.get("max_tokens"))
+    
+    # Make request with retry logic
+    timeout = httpx.Timeout(connect=30, read=90, write=30, pool=None)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        import asyncio as _asyncio
+        
+        max_retries = 3
+        retry_delays = [2, 5, 10]
+        
+        for attempt in range(max_retries):
+            try:
+                resp = await client.post(url, json=payload, headers=headers)
+                
+                # Handle rate limiting (429) with exponential backoff
+                if resp.status_code == 429:
+                    if attempt < max_retries - 1:
+                        delay = retry_delays[attempt]
+                        logger.warning("OpenAI rate limited, retrying",
+                                     attempt=attempt + 1,
+                                     delay=delay)
+                        await _asyncio.sleep(delay)
+                        continue
+                    else:
+                        error_detail = resp.json().get("error", {}).get("message", "Rate limit exceeded") if resp.headers.get("content-type", "").startswith("application/json") else resp.text[:200]
+                        raise HTTPException(
+                            status_code=429,
+                            detail=f"OpenAI API rate limit exceeded. Please try again in a moment. Error: {error_detail}"
+                        )
+                
+                # Handle other errors
+                if resp.status_code not in (200, 201):
+                    try:
+                        error_json = resp.json()
+                        error_msg = error_json.get("error", {}).get("message", "Unknown error")
+                    except:
+                        error_msg = resp.text[:200] if resp.text else "Unknown error"
+                    
+                    logger.error("OpenAI API error",
+                               status_code=resp.status_code,
+                               error=error_msg,
+                               model=model_name)
+                    
+                    raise HTTPException(
+                        status_code=502,
+                        detail=f"OpenAI API error: {error_msg}"
+                    )
+                
+                # Success - parse response
+                break
+                
+            except HTTPException:
+                raise
+            except Exception as exc:
+                if attempt < max_retries - 1:
+                    delay = retry_delays[attempt]
+                    logger.warning("OpenAI request failed, retrying",
+                                 error=str(exc),
+                                 attempt=attempt + 1,
+                                 delay=delay)
+                    await _asyncio.sleep(delay)
+                    continue
+                else:
+                    logger.error("OpenAI request failed after retries",
+                               error=str(exc),
+                               url=url)
+                    raise HTTPException(status_code=502, detail=f"OpenAI API request failed: {str(exc)}")
+        
+        # Parse response
+        try:
+            response_json = resp.json()
+        except (json.JSONDecodeError, ValueError) as json_exc:
+            logger.error("OpenAI response is not valid JSON",
+                        error=str(json_exc),
+                        response_preview=resp.text[:500])
+            raise HTTPException(status_code=502, detail="OpenAI returned invalid response format")
+        
+        # Extract content from OpenAI response
+        try:
+            choices = response_json.get("choices", [])
+            if not choices:
+                logger.error("OpenAI returned no choices",
+                            response=response_json)
+                raise HTTPException(status_code=502, detail="OpenAI returned no response choices")
+            
+            message = choices[0].get("message", {})
+            content = message.get("content", "")
+            
+            if not content or content.strip() == "":
+                logger.error("OpenAI returned empty content",
+                            response=response_json)
+                return {"content": "I don't have enough information to answer your question."}
+            
+            # For RAG chatbot, return content directly
+            # If response_format requested JSON, parse it
+            if response_format and response_format.get("type") == "json_object":
+                parsed = _parse_json_object_from_content(content)
+                if "nodes" in parsed:
+                    return {"nodes": parsed.get("nodes", [])}
+            
+            return {"content": content}
+            
+        except (KeyError, TypeError) as exc:
+            logger.error("OpenAI response parse error",
+                        error=str(exc),
+                        response_preview=json.dumps(response_json)[:800])
+            raise HTTPException(status_code=502, detail=f"Failed to parse OpenAI response: {str(exc)}")
+
+
 async def call_llm(
     messages: List[Dict[str, str]],
     response_format: Optional[Dict[str, Any]] = None,
@@ -123,7 +271,22 @@ async def call_llm(
                 nodes.append({"temp_id": gid, "label": gc_label, "parent_temp_id": cid, "depth": 3})
         return {"nodes": nodes}
 
-    # Local Ollama API call
+    # Determine provider based on URL or provider setting
+    base_url = settings.llm_base_url.lower() if settings.llm_base_url else ""
+    provider = (settings.llm_default_provider or "").lower()
+    
+    # Detect OpenAI: URL contains "openai.com" OR provider is "openai" OR has API key but no Ollama URL pattern
+    is_openai = (
+        "openai.com" in base_url or 
+        provider == "openai" or
+        (settings.llm_api_key and settings.llm_base_url and "openai.com" in base_url)
+    )
+    
+    # OpenAI API call (if configured)
+    if is_openai and settings.llm_api_key:
+        return await _call_openai_api(messages, response_format, temperature)
+    
+    # Ollama API call (default)
     headers = {
         "Content-Type": "application/json"
     }

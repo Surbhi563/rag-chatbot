@@ -1,4 +1,7 @@
 # Backend dependencies for Railway deployment
+# Setuptools needed for distutils (Python 3.12+ compatibility)
+setuptools>=65.0.0
+
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 pydantic==2.5.0
