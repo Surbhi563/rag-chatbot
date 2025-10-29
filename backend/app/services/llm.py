@@ -242,8 +242,28 @@ async def call_llm(
                         )
                         raise HTTPException(status_code=502, detail=f"LLM gateway error {resp.status_code}: Service temporarily unavailable")
                 
-                # Handle 404 - endpoint not found
+                # Handle 404 - endpoint not found or model not found
                 if resp.status_code == 404:
+                    # Try to parse error response to see if it's a model error
+                    try:
+                        error_json = resp.json()
+                        if "error" in error_json and ("model" in str(error_json.get("error", "")).lower() or "not found" in str(error_json.get("error", "")).lower()):
+                            error_msg = error_json.get("error", "Model not found")
+                            logger.error(
+                                "LLM model not found",
+                                status_code=404,
+                                url=url,
+                                model=payload.get("model"),
+                                error=error_msg,
+                            )
+                            raise HTTPException(
+                                status_code=404,
+                                detail=f"Model not available: {error_msg}. The Ollama service may need to pull the model first. Please check Ollama service logs on Render."
+                            )
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+                    
+                    # Generic 404 - endpoint not found
                     logger.error(
                         "LLM gateway 404 error - endpoint not found",
                         status_code=404,
