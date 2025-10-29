@@ -300,6 +300,27 @@ async def call_llm(
                         response_preview=resp.text[:500])
             raise HTTPException(status_code=502, detail="LLM returned invalid response format")
         
+        # Check for Ollama error responses (model not found, etc.)
+        if "error" in raw_response_json:
+            error_msg = raw_response_json.get("error", "Unknown error")
+            logger.error("LLM service returned error", 
+                        error=error_msg,
+                        url=url,
+                        model=payload.get("model"),
+                        response=raw_response_json)
+            
+            # Special handling for model not found
+            if "not found" in str(error_msg).lower() or "model" in str(error_msg).lower():
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"Model not available: {error_msg}. The Ollama service may need to pull the model first. Please check Ollama service logs."
+                )
+            else:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"LLM service error: {error_msg}"
+                )
+        
         # Ollama API response format
         try:
             content = raw_response_json.get("response", "")
