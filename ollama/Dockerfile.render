@@ -6,19 +6,24 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 # Create startup script that pulls model automatically
 RUN echo '#!/bin/bash\n\
 set -e\n\
-echo "Starting Ollama server..."\n\
 \n\
-# Start Ollama in background with proper host binding\n\
-OLLAMA_HOST=0.0.0.0:${PORT:-11434} /bin/ollama serve &\n\
+# Get PORT from environment (Render sets this)\n\
+OLLAMA_PORT=${PORT:-11434}\n\
+export OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT}\n\
+\n\
+echo "Starting Ollama server on port ${OLLAMA_PORT}..."\n\
+echo "OLLAMA_HOST=${OLLAMA_HOST}"\n\
+\n\
+# Start Ollama in background\n\
+/bin/ollama serve &\n\
 OLLAMA_PID=$!\n\
 \n\
-echo "Waiting for Ollama to start on port ${PORT:-11434}..."\n\
+echo "Waiting for Ollama to start..."\n\
 sleep 10\n\
 \n\
 # Check if Ollama is ready\n\
-CHECK_PORT=${PORT:-11434}\n\
 for i in {1..30}; do\n\
-  if curl -s http://localhost:${CHECK_PORT}/api/tags > /dev/null 2>&1 || curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then\n\
+  if curl -s http://localhost:${OLLAMA_PORT}/api/tags > /dev/null 2>&1 || curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then\n\
     echo "Ollama is ready!"\n\
     break\n\
   fi\n\
@@ -26,8 +31,12 @@ for i in {1..30}; do\n\
   sleep 2\n\
 done\n\
 \n\
+# Wait a bit more for Ollama to fully initialize\n\
+sleep 5\n\
+\n\
 # Pull the model if not already available\n\
 echo "Checking for model llama3.2:3b..."\n\
+export OLLAMA_HOST=http://localhost:${OLLAMA_PORT}\n\
 if ! /bin/ollama list 2>/dev/null | grep -q "llama3.2:3b"; then\n\
   echo "Model not found. Pulling llama3.2:3b (this may take several minutes)..."\n\
   /bin/ollama pull llama3.2:3b || echo "Warning: Model pull encountered an issue"\n\
@@ -38,14 +47,17 @@ fi\n\
 \n\
 # List available models\n\
 echo "Available models:"\n\
-/bin/ollama list\n\
+/bin/ollama list || echo "Could not list models, but server is running"\n\
 \n\
-echo "Ollama server is running. Waiting for requests..."\n\
+# Reset OLLAMA_HOST for server (listening on all interfaces)\n\
+export OLLAMA_HOST=0.0.0.0:${OLLAMA_PORT}\n\
+\n\
+echo "Ollama server is running on port ${OLLAMA_PORT}. Waiting for requests..."\n\
 wait $OLLAMA_PID\n\
 ' > /start.sh && chmod +x /start.sh
 
-# Set environment variables for Render (PORT will be set by Render)
-ENV OLLAMA_HOST=0.0.0.0
+# Set default environment (PORT will be set by Render at runtime)
+ENV OLLAMA_HOST=0.0.0.0:11434
 
 # Expose default port (Render will override with $PORT)
 EXPOSE 11434
