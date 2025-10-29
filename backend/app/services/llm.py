@@ -142,9 +142,12 @@ async def call_llm(
     
     prompt = "\n\n".join(prompt_parts) + "\n\nAssistant:"
     
+    # Determine model name - use configured model or default
+    model_name = settings.llm_default_model if settings.llm_default_model else "llama3.2:3b"
+    
     # Build payload for Ollama API
     payload: Dict[str, Any] = {
-        "model": "llama3.2:3b",
+        "model": model_name,
         "prompt": prompt,
         "stream": False,
         "options": {
@@ -153,8 +156,18 @@ async def call_llm(
         }
     }
 
+    # Construct Ollama URL - handle cases where base_url might already include /api/generate
+    if settings.llm_base_url:
+        base_url = settings.llm_base_url.rstrip('/')
+        # If base_url already includes /api/generate, use it as-is, otherwise append it
+        if '/api/generate' in base_url:
+            ollama_url = base_url
+        else:
+            ollama_url = f"{base_url}/api/generate"
+    else:
+        ollama_url = "http://localhost:11434/api/generate"
+    
     # Debug logging for request
-    ollama_url = f"{settings.llm_base_url.rstrip('/')}/api/generate" if settings.llm_base_url else "http://localhost:11434/api/generate"
     logger.info("LLM gateway request", 
                 url=ollama_url,
                 model=payload.get("model"),
@@ -167,8 +180,8 @@ async def call_llm(
     # Set sane timeouts and a single retry for transient 429/5xx
     timeout = httpx.Timeout(connect=30, read=90, write=30, pool=None)
     async with httpx.AsyncClient(timeout=timeout) as client:
-        # Use configured Ollama endpoint
-        url = f"{settings.llm_base_url.rstrip('/')}/api/generate" if settings.llm_base_url else "http://localhost:11434/api/generate"
+        # Use the constructed URL
+        url = ollama_url
         try:
             resp = await client.post(url, json=payload, headers=headers)
             if resp.status_code in (429, 500, 502, 503, 504):
@@ -191,7 +204,16 @@ async def call_llm(
             # When an explicit gateway is configured, surface the failure (no silent fallback)
             raise HTTPException(status_code=502, detail="LLM request failed")
 
-        raw_response_json = resp.json()
+        # Parse JSON response with error handling
+        try:
+            raw_response_json = resp.json()
+        except (json.JSONDecodeError, ValueError) as json_exc:
+            logger.error("LLM response is not valid JSON", 
+                        error=str(json_exc), 
+                        url=url,
+                        status_code=resp.status_code,
+                        response_preview=resp.text[:500])
+            raise HTTPException(status_code=502, detail="LLM returned invalid response format")
         
         # Ollama API response format
         try:

@@ -3,7 +3,7 @@ import axios from 'axios';
 import { Send, Loader, Globe, Plus, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'https://rag-chatbot-backend-szgj.onrender.com';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8080';
 
 function App() {
   const [messages, setMessages] = useState([]);

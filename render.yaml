@@ -1,0 +1,64 @@
+services:
+  # Backend Service
+  - type: web
+    name: rag-chatbot-backend
+    env: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ENV
+        value: prod
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_FORMAT
+        value: json
+      - key: VECTOR_DB_PATH
+        value: /opt/render/project/src/chroma_db
+      - key: LOCAL_BUCKET_DIR
+        value: /opt/render/project/src/rag-documents
+      - key: LLM_BASE_URL
+        sync: false  # Set this manually in Render dashboard after deployment
+      - key: LLM_DEFAULT_MODEL
+        value: llama3.2:3b
+      - key: LLM_DEFAULT_TEMPERATURE
+        value: 0.1
+      - key: LLM_DEFAULT_MAX_TOKENS
+        value: 2000
+      - key: APP_NAME
+        value: rag-chatbot
+      - key: APP_VERSION
+        value: 1.0.0
+      - key: PYTHONUNBUFFERED
+        value: 1
+      - key: PYTHONDONTWRITEBYTECODE
+        value: 1
+
+  # Frontend Service (Static Site)
+  - type: web
+    name: rag-chatbot-frontend
+    env: static
+    rootDir: frontend
+    buildCommand: npm install && REACT_APP_API_URL=$REACT_APP_API_URL npm run build
+    staticPublishPath: ./build
+    envVars:
+      - key: REACT_APP_API_URL
+        sync: false  # Set this to your backend URL after deployment
+        fromService:
+          type: web
+          name: rag-chatbot-backend
+          property: host
+
+  # Optional: Ollama Service (uncomment if using Ollama)
+  # - type: web
+  #   name: rag-chatbot-ollama
+  #   env: docker
+  #   rootDir: ollama
+  #   dockerfilePath: ollama/Dockerfile.render
+  #   dockerContext: ollama
+  #   envVars:
+  #     - key: OLLAMA_HOST
+  #       value: 0.0.0.0:$PORT
+  #     - key: PORT
+  #       value: 11434
+

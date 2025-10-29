@@ -3,6 +3,8 @@
 import re
 from typing import Any, Dict, List, Optional
 
+from fastapi import HTTPException
+
 from app.core.logging import get_logger
 from app.services.llm import call_llm
 from app.services.vector_db import vector_db
@@ -89,12 +91,16 @@ Please provide a helpful answer based on the context above."""
                 "context_used": len(context_parts)
             }
             
+        except HTTPException:
+            # Re-raise HTTPExceptions so FastAPI can handle them properly
+            raise
         except Exception as e:
-            logger.error(f"Failed to answer question: {e}")
+            logger.error(f"Failed to answer question: {e}", exc_info=True)
             return {
                 "answer": "I encountered an error while processing your question. Please try again.",
                 "sources": [],
                 "confidence": 0.0,
+                "context_used": 0,
                 "error": str(e)
             }
     

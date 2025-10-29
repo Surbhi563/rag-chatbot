@@ -70,6 +70,10 @@ async def chat_message(request: ChatRequest) -> ChatResponse:
             temperature=request.temperature
         )
         
+        # Check if result contains an error (from RAG service error handling)
+        if "error" in result and result.get("error"):
+            logger.error("RAG service error", error=result.get("error"), question=request.message)
+        
         response = ChatResponse(
             answer=result["answer"],
             sources=result.get("sources", []),
@@ -87,9 +91,12 @@ async def chat_message(request: ChatRequest) -> ChatResponse:
         
         return response
         
+    except HTTPException:
+        # Re-raise HTTPExceptions from LLM service
+        raise
     except Exception as e:
-        logger.error(f"Chat message error: {e}")
-        raise HTTPException(status_code=500, detail="Failed to process chat message")
+        logger.error("Chat message error", error=str(e), exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to process chat message: {str(e)}")
 
 
 @router.post("/documents/add", response_model=DocumentAddResponse)
