@@ -1,20 +1,19 @@
 FROM ollama/ollama:latest
 
-# Create startup script that pulls model automatically
+# Create startup script inline (avoids COPY issues)
 RUN echo '#!/bin/bash\n\
 set -e\n\
 echo "Starting Ollama server..."\n\
 /bin/ollama serve &\n\
 OLLAMA_PID=$!\n\
 \n\
-echo "Waiting for Ollama to start..."\n\
+echo "Waiting for Ollama to initialize..."\n\
 sleep 10\n\
 \n\
-# Check if Ollama is ready (use PORT from environment or default to 11434)\n\
-OLLAMA_PORT=${PORT:-11434}\n\
+# Wait for Ollama to be ready\n\
 for i in {1..30}; do\n\
-  if curl -s http://localhost:${OLLAMA_PORT}/api/tags > /dev/null 2>&1 || curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then\n\
-    echo "Ollama is ready on port ${OLLAMA_PORT}!"\n\
+  if curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then\n\
+    echo "Ollama is ready!"\n\
     break\n\
   fi\n\
   echo "Waiting for Ollama to respond... ($i/30)"\n\
@@ -24,15 +23,19 @@ done\n\
 # Pull the model if not already available\n\
 echo "Checking for model llama3.2:3b..."\n\
 if ! /bin/ollama list | grep -q "llama3.2:3b"; then\n\
-  echo "Model not found. Pulling llama3.2:3b (this may take several minutes)..."\n\
-  /bin/ollama pull llama3.2:3b || echo "Warning: Model pull failed, but continuing..."\n\
+  echo "Model not found. Pulling llama3.2:3b..."\n\
+  echo "This may take several minutes (model is ~2GB)..."\n\
+  /bin/ollama pull llama3.2:3b || echo "Warning: Model pull encountered an issue"\n\
   echo "Model pull completed!"\n\
 else\n\
-  echo "Model already exists!"\n\
+  echo "Model llama3.2:3b already exists!"\n\
 fi\n\
 \n\
-# Keep Ollama running\n\
-echo "Ollama is running. Model llama3.2:3b is ready!"\n\
+# Verify model is available\n\
+echo "Available models:"\n\
+/bin/ollama list\n\
+\n\
+echo "Ollama server is running with model llama3.2:3b ready!"\n\
 wait $OLLAMA_PID\n\
 ' > /start.sh && chmod +x /start.sh
 
@@ -44,3 +47,4 @@ EXPOSE $PORT
 
 # Use startup script that pulls model automatically
 CMD ["/start.sh"]
+
