@@ -1,20 +1,25 @@
 FROM ollama/ollama:latest
 
+# Install curl for health checks
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
 # Create startup script that pulls model automatically
 RUN echo '#!/bin/bash\n\
 set -e\n\
 echo "Starting Ollama server..."\n\
-/bin/ollama serve &\n\
+\n\
+# Start Ollama in background with proper host binding\n\
+OLLAMA_HOST=0.0.0.0:${PORT:-11434} /bin/ollama serve &\n\
 OLLAMA_PID=$!\n\
 \n\
-echo "Waiting for Ollama to start..."\n\
+echo "Waiting for Ollama to start on port ${PORT:-11434}..."\n\
 sleep 10\n\
 \n\
-# Check if Ollama is ready (use PORT from environment or default to 11434)\n\
-OLLAMA_PORT=${PORT:-11434}\n\
+# Check if Ollama is ready\n\
+CHECK_PORT=${PORT:-11434}\n\
 for i in {1..30}; do\n\
-  if curl -s http://localhost:${OLLAMA_PORT}/api/tags > /dev/null 2>&1 || curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then\n\
-    echo "Ollama is ready on port ${OLLAMA_PORT}!"\n\
+  if curl -s http://localhost:${CHECK_PORT}/api/tags > /dev/null 2>&1 || curl -s http://localhost:11434/api/tags > /dev/null 2>&1; then\n\
+    echo "Ollama is ready!"\n\
     break\n\
   fi\n\
   echo "Waiting for Ollama to respond... ($i/30)"\n\
@@ -23,24 +28,28 @@ done\n\
 \n\
 # Pull the model if not already available\n\
 echo "Checking for model llama3.2:3b..."\n\
-if ! /bin/ollama list | grep -q "llama3.2:3b"; then\n\
+if ! /bin/ollama list 2>/dev/null | grep -q "llama3.2:3b"; then\n\
   echo "Model not found. Pulling llama3.2:3b (this may take several minutes)..."\n\
-  /bin/ollama pull llama3.2:3b || echo "Warning: Model pull failed, but continuing..."\n\
-  echo "Model pull completed!"\n\
+  /bin/ollama pull llama3.2:3b || echo "Warning: Model pull encountered an issue"\n\
+  echo "Model pull attempt completed!"\n\
 else\n\
-  echo "Model already exists!"\n\
+  echo "Model llama3.2:3b already exists!"\n\
 fi\n\
 \n\
-# Keep Ollama running\n\
-echo "Ollama is running. Model llama3.2:3b is ready!"\n\
+# List available models\n\
+echo "Available models:"\n\
+/bin/ollama list\n\
+\n\
+echo "Ollama server is running. Waiting for requests..."\n\
 wait $OLLAMA_PID\n\
 ' > /start.sh && chmod +x /start.sh
 
-# Set environment variables for Render
-ENV OLLAMA_HOST=0.0.0.0:$PORT
+# Set environment variables for Render (PORT will be set by Render)
+ENV OLLAMA_HOST=0.0.0.0
 
-# Expose the port (Render will set PORT automatically)
-EXPOSE $PORT
+# Expose default port (Render will override with $PORT)
+EXPOSE 11434
 
-# Use startup script that pulls model automatically
-CMD ["/start.sh"]
+# Override entrypoint to use bash for our script
+ENTRYPOINT []
+CMD ["/bin/bash", "/start.sh"]
