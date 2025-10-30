@@ -35,18 +35,18 @@ done\n\
 sleep 10\n\
 \n\
 # Pull the model if not already available\n\
-echo "Checking for model llama3.2:3b..."\n\
+echo "Checking for model tinyllama..."\n\
 MODEL_CHECK_COUNT=0\n\
 while [ $MODEL_CHECK_COUNT -lt 5 ]; do\n\
-  if /bin/ollama list 2>/dev/null | grep -q "llama3.2:3b"; then\n\
-    echo "Model llama3.2:3b already exists!"\n\
+  if /bin/ollama list 2>/dev/null | grep -q "tinyllama"; then\n\
+    echo "Model tinyllama already exists!"\n\
     break\n\
   fi\n\
   MODEL_CHECK_COUNT=$((MODEL_CHECK_COUNT + 1))\n\
   if [ $MODEL_CHECK_COUNT -eq 1 ]; then\n\
-    echo "Model not found. Pulling llama3.2:3b (this may take several minutes)..."\n\
-    echo "This is a ~2GB download, please be patient..."\n\
-    /bin/ollama pull llama3.2:3b\n\
+    echo "Model not found. Pulling tinyllama (works on free tier, ~700MB)..."\n\
+    echo "This model fits in Railway free tier memory!"\n\
+    /bin/ollama pull tinyllama\n\
     PULL_EXIT_CODE=$?\n\
     if [ $PULL_EXIT_CODE -eq 0 ]; then\n\
       echo "✓ Model pull completed successfully!"\n\
@@ -61,10 +61,10 @@ done\n\
 \n\
 # Verify model is available\n\
 echo "Verifying model availability..."\n\
-if /bin/ollama list 2>/dev/null | grep -q "llama3.2:3b"; then\n\
-  echo "✓ Model llama3.2:3b is ready!"\n\
+if /bin/ollama list 2>/dev/null | grep -q "tinyllama"; then\n\
+  echo "✓ Model tinyllama is ready!"\n\
 else\n\
-  echo "⚠ WARNING: Model llama3.2:3b still not available after pull attempt"\n\
+  echo "⚠ WARNING: Model tinyllama still not available after pull attempt"\n\
   echo "Available models:"\n\
   /bin/ollama list 2>/dev/null || echo "Could not list models"\n\
 fi\n\

@@ -329,7 +329,7 @@ async def call_llm(
             ollama_url = f"{base_url}/api/generate"
     else:
         ollama_url = "http://localhost:11434/api/generate"
-    
+
     # Debug logging for request
     logger.info("LLM gateway request", 
                 url=ollama_url,
@@ -441,22 +441,22 @@ async def call_llm(
                 
                 # Success or other errors
                 if resp.status_code not in (200, 201):
-                    logger.error(
-                        "LLM gateway error",
-                        status_code=resp.status_code,
-                        url=url,
-                        model=payload.get("model"),
-                        body_preview=resp.text[:500],
-                    )
+                logger.error(
+                    "LLM gateway error",
+                    status_code=resp.status_code,
+                    url=url,
+                    model=payload.get("model"),
+                    body_preview=resp.text[:500],
+                )
                     raise HTTPException(status_code=502, detail=f"LLM gateway error {resp.status_code}: {resp.text[:200] if resp.text else 'Unknown error'}")
                 
                 # Success - break out of retry loop
                 break
                 
-            except HTTPException:
+        except HTTPException:
                 # Don't retry HTTPExceptions, just raise them
-                raise
-            except Exception as exc:
+            raise
+        except Exception as exc:
                 if attempt < max_retries - 1:
                     delay = retry_delays[attempt]
                     logger.warning(
@@ -474,7 +474,7 @@ async def call_llm(
 
         # Parse JSON response with error handling
         try:
-            raw_response_json = resp.json()
+        raw_response_json = resp.json()
         except (json.JSONDecodeError, ValueError) as json_exc:
             logger.error("LLM response is not valid JSON", 
                         error=str(json_exc), 
@@ -497,6 +497,12 @@ async def call_llm(
                 raise HTTPException(
                     status_code=404,
                     detail=f"Model not available: {error_msg}. The Ollama service may need to pull the model first. Please check Ollama service logs."
+                )
+            # Special handling for memory seam killed errors
+            elif "killed" in str(error_msg).lower() or "signal" in str(error_msg).lower():
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Ollama service out of memory (crashed): {error_msg}. Railway free tier has insufficient RAM (~512MB) for llama3.2:3b. Solutions: 1) Use smaller model (tinyllama), 2) Upgrade Railway to Starter plan ($7/month), or 3) Accept intermittent crashes on free tier."
                 )
             else:
                 raise HTTPException(
