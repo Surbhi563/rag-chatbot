@@ -441,22 +441,22 @@ async def call_llm(
                 
                 # Success or other errors
                 if resp.status_code not in (200, 201):
-                logger.error(
-                    "LLM gateway error",
-                    status_code=resp.status_code,
-                    url=url,
-                    model=payload.get("model"),
-                    body_preview=resp.text[:500],
-                )
+                    logger.error(
+                        "LLM gateway error",
+                        status_code=resp.status_code,
+                        url=url,
+                        model=payload.get("model"),
+                        body_preview=resp.text[:500],
+                    )
                     raise HTTPException(status_code=502, detail=f"LLM gateway error {resp.status_code}: {resp.text[:200] if resp.text else 'Unknown error'}")
                 
                 # Success - break out of retry loop
                 break
                 
-        except HTTPException:
+            except HTTPException:
                 # Don't retry HTTPExceptions, just raise them
-            raise
-        except Exception as exc:
+                raise
+            except Exception as exc:
                 if attempt < max_retries - 1:
                     delay = retry_delays[attempt]
                     logger.warning(
@@ -474,7 +474,7 @@ async def call_llm(
 
         # Parse JSON response with error handling
         try:
-        raw_response_json = resp.json()
+            raw_response_json = resp.json()
         except (json.JSONDecodeError, ValueError) as json_exc:
             logger.error("LLM response is not valid JSON", 
                         error=str(json_exc), 
